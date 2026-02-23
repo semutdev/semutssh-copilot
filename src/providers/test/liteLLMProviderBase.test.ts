@@ -1,10 +1,11 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import * as sinon from "sinon";
-import { LiteLLMChatProvider } from "../../providers";
+import { LiteLLMChatProvider } from "../";
 import { LiteLLMClient } from "../../adapters/litellmClient";
 import { ResponsesClient } from "../../adapters/responsesClient";
-import type { LiteLLMModelInfo } from "../../types";
+import type { LiteLLMModelInfo, OpenAIChatCompletionRequest } from "../../types";
+import type { ConfigManager } from "../../config/configManager";
 
 suite("LiteLLM Provider Unit Tests", () => {
     let sandbox: sinon.SinonSandbox;
@@ -52,7 +53,8 @@ suite("LiteLLM Provider Unit Tests", () => {
                 maxInputTokens: 1,
                 maxOutputTokens: 1,
                 capabilities: { toolCalling: true, imageInput: false },
-            },
+                tags: ["tools"],
+            } as unknown as vscode.LanguageModelChatInformation,
         ];
 
         provider.clearModelCache();
@@ -78,12 +80,12 @@ suite("LiteLLM Provider Unit Tests", () => {
                 maxInputTokens: 100,
                 maxOutputTokens: 100,
                 capabilities: { toolCalling: true, imageInput: false },
-            },
+                tags: ["tools"],
+            } as unknown as vscode.LanguageModelChatInformation,
         ];
 
         // Stub ConfigManager to return a config with modelIdOverride.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const configManager = (provider as any)._configManager as {
+        const configManager = (provider as unknown as { _configManager: unknown })._configManager as {
             convertProviderConfiguration: (c: Record<string, unknown>) => unknown;
         };
         sandbox.stub(configManager, "convertProviderConfiguration").returns({
@@ -99,8 +101,8 @@ suite("LiteLLM Provider Unit Tests", () => {
         // Prevent network calls: stub the low-level client to return a minimal ReadableStream.
         // We only need to assert that the request model id is the override.
         const chatStub = sandbox.stub(LiteLLMClient.prototype, "chat");
-        chatStub.callsFake(async (...args: unknown[]) => {
-            const requestBody = args[0] as { model: string };
+        chatStub.callsFake(async (request: OpenAIChatCompletionRequest) => {
+            const requestBody = request as { model: string };
             assert.strictEqual(requestBody.model, "override-model");
 
             const encoder = new TextEncoder();
@@ -387,8 +389,7 @@ suite("LiteLLM Provider Unit Tests", () => {
         // This would be called internally when VS Code passes configuration through options
         // We're testing that the conversion works properly
         const provider = new LiteLLMChatProvider(mockSecrets, userAgent);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const configManager = (provider as any)._configManager;
+        const configManager = (provider as unknown as { _configManager: ConfigManager })._configManager;
         const convertedConfig = configManager.convertProviderConfiguration(providerConfig);
 
         assert.strictEqual(convertedConfig.url, "https://api.litellm.ai");
@@ -406,6 +407,7 @@ suite("LiteLLM Provider Unit Tests", () => {
                     mode: "chat",
                     supports_native_streaming: true,
                     supports_function_calling: true,
+                    supported_openai_params: ["tools"],
                 } as LiteLLMModelInfo,
             },
             {

@@ -4,6 +4,9 @@ import type { LiteLLMConfig } from "../types";
 import { Logger } from "../utils/logger";
 import { LiteLLMTelemetry } from "../utils/telemetry";
 import { LiteLLMProviderBase } from "./liteLLMProviderBase";
+import { countTokens } from "../adapters/tokenUtils";
+import { decodeSSE } from "../adapters/sse/sseDecoder";
+import { createInitialStreamingState, interpretStreamEvent } from "../adapters/streaming/liteLLMStreamInterpreter";
 
 /**
  * Implements VS Code's LanguageModelTextCompletionProvider for inline completions.
@@ -24,6 +27,14 @@ export class LiteLLMCompletionProvider extends LiteLLMProviderBase {
     ): Promise<{ insertText: string }> {
         const requestId = Math.random().toString(36).substring(7);
         const startTime = LiteLLMTelemetry.startTimer();
+        const caller = options.modelId?.includes("inline") ? "inline-completions" : "text-completion";
+        const justification = (options as { justification?: string }).justification;
+
+        Logger.info(
+            `Completion request started | RequestID: ${requestId} | Model: ${options.modelId || "auto"} | Caller: ${caller} | Justification: ${justification || "none"}`
+        );
+
+        let tokensIn: number | undefined;
 
         try {
             const config = options.configuration
@@ -41,6 +52,9 @@ export class LiteLLMCompletionProvider extends LiteLLMProviderBase {
 
             const modelInfo = this._modelInfoCache.get(model.id);
             const messages: vscode.LanguageModelChatRequestMessage[] = [this.wrapPromptAsMessage(prompt)];
+
+            // Calculate tokensIn for telemetry
+            tokensIn = countTokens(messages, model.id, modelInfo);
 
             // Reuse the base request pipeline. We pass a minimal ProvideLanguageModelChatResponseOptions-like
             // structure with provider configuration and model options.
@@ -68,10 +82,15 @@ export class LiteLLMCompletionProvider extends LiteLLMProviderBase {
 
             const completionText = await this.extractCompletionTextFromStream(stream, token);
 
+            // Estimate tokensOut from the completion text
+            const tokensOut = countTokens(completionText, model.id, modelInfo);
+
             LiteLLMTelemetry.reportMetric({
                 requestId,
                 model: model.id,
                 durationMs: LiteLLMTelemetry.endTimer(startTime),
+                tokensIn,
+                tokensOut,
                 status: "success",
                 caller: "inline-completions",
             });
@@ -87,6 +106,7 @@ export class LiteLLMCompletionProvider extends LiteLLMProviderBase {
                 requestId,
                 model: options.modelId ?? "unknown",
                 durationMs: LiteLLMTelemetry.endTimer(startTime),
+                tokensIn,
                 status: "failure",
                 error: errorMsg,
                 caller: "inline-completions",
@@ -117,63 +137,49 @@ export class LiteLLMCompletionProvider extends LiteLLMProviderBase {
         }
 
         // Prefer models explicitly tagged for inline completions.
-        const tagged = this._lastModelList.find((m) => {
+        return this._lastModelList.find((m) => {
             const tags = (m as unknown as { tags?: string[] }).tags;
             return tags?.includes("inline-completions") === true;
         });
-        if (tagged) {
-            return tagged;
-        }
-
-        // Fallback: first discovered model.
-        return this._lastModelList[0];
     }
 
     private async extractCompletionTextFromStream(
         stream: ReadableStream<Uint8Array>,
         token: vscode.CancellationToken
     ): Promise<string> {
-        const reader = stream.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
         let fullText = "";
+        const state = createInitialStreamingState();
 
         try {
-            while (!token.isCancellationRequested) {
-                const { done, value } = await reader.read();
-                if (done) {
+            for await (const payload of decodeSSE(stream, token)) {
+                if (token.isCancellationRequested) {
                     break;
                 }
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split("\n");
-                buffer = lines.pop() || "";
+                const json = this.tryParseJSON(payload);
+                if (!json) {
+                    continue;
+                }
 
-                for (const line of lines) {
-                    if (!line.startsWith("data:")) {
-                        continue;
-                    }
-                    const data = line.replace(/^data:\s*/, "");
-                    if (!data || data === "[DONE]") {
-                        continue;
-                    }
-                    try {
-                        const json = JSON.parse(data) as {
-                            choices?: Array<{ delta?: { content?: string } }>;
-                        };
-                        const delta = json.choices?.[0]?.delta;
-                        if (delta?.content) {
-                            fullText += delta.content;
-                        }
-                    } catch {
-                        // ignore malformed frames
+                const parts = interpretStreamEvent(json, state);
+                for (const part of parts) {
+                    if (part.type === "text") {
+                        fullText += part.value;
                     }
                 }
             }
-        } finally {
-            reader.releaseLock();
+        } catch (err) {
+            Logger.warn("Error while extracting completion text", err);
         }
 
         return fullText;
+    }
+
+    private tryParseJSON(text: string): unknown {
+        try {
+            return JSON.parse(text);
+        } catch {
+            return undefined;
+        }
     }
 }

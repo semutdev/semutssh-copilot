@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import * as vscode from "vscode";
-import { ResponsesClient } from "../../adapters/responsesClient";
+import { ResponsesClient } from "../responsesClient";
 import type { LiteLLMConfig, LiteLLMResponsesRequest } from "../../types";
 import { Logger } from "../../utils/logger";
 
@@ -90,6 +90,32 @@ suite("ResponsesClient sendResponsesRequest", () => {
         assert.strictEqual(headers["X-API-Key"], config.key);
     });
 
+    test("sets Cache-Control: no-cache when disableCaching is true and model is not Anthropic", async () => {
+        const cachingConfig: LiteLLMConfig = { ...config, disableCaching: true };
+        const client = new ResponsesClient(cachingConfig, userAgent);
+        const body: LiteLLMResponsesRequest = { model: "gpt-4", input: [] };
+        fetchStub.resolves(new Response(readableFromStrings([""]), { status: 200 }));
+
+        await client.sendResponsesRequest(body, { report: () => {} }, new vscode.CancellationTokenSource().token);
+
+        const [, init] = fetchStub.firstCall.args as [string, RequestInit];
+        const headers = normalizeHeaders(init?.headers);
+        assert.strictEqual(headers["Cache-Control"], "no-cache");
+    });
+
+    test("does not set Cache-Control: no-cache for Anthropic models even if disableCaching is true", async () => {
+        const cachingConfig: LiteLLMConfig = { ...config, disableCaching: true };
+        const client = new ResponsesClient(cachingConfig, userAgent);
+        const body: LiteLLMResponsesRequest = { model: "claude-3-opus", input: [] };
+        fetchStub.resolves(new Response(readableFromStrings([""]), { status: 200 }));
+
+        await client.sendResponsesRequest(body, { report: () => {} }, new vscode.CancellationTokenSource().token);
+
+        const [, init] = fetchStub.firstCall.args as [string, RequestInit];
+        const headers = normalizeHeaders(init?.headers);
+        assert.strictEqual(headers["Cache-Control"], undefined);
+    });
+
     test("throws on non-OK response", async () => {
         const client = makeClient();
         fetchStub.resolves(new Response("bad", { status: 500, statusText: "Server" }));
@@ -120,7 +146,7 @@ suite("ResponsesClient sendResponsesRequest", () => {
             'data: {"type":"response.output_text.delta","delta":"Hello"}\n\n',
             'data: {"type":"response.output_reasoning.delta","delta":"Think"}\n\n',
             'data: {"type":"response.output_item.delta","item":{"type":"function_call","call_id":"c1","name":"tool","arguments":"{\\"x\\":1}"}}\n',
-            'data: {"type":"response.output_item.done","item":{"type":"function_call"}}\n\n',
+            'data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"c1"}}\n\n',
             "data: [DONE]\n\n",
         ];
         fetchStub.resolves(new Response(readableFromStrings(sse), { status: 200 }));

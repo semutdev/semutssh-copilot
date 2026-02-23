@@ -3,10 +3,8 @@ import * as vscode from "vscode";
 import * as sinon from "sinon";
 
 import type { LiteLLMConfig } from "../../types";
-import {
-    LiteLLMInlineCompletionProvider,
-    buildInlineCompletionPrompt,
-} from "../../inlineCompletions/liteLLMInlineCompletionProvider";
+import { LiteLLMInlineCompletionProvider, buildInlineCompletionPrompt } from "../liteLLMInlineCompletionProvider";
+import type { InlineCompletionsDependencies } from "../liteLLMInlineCompletionProvider";
 
 suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
     let sandbox: sinon.SinonSandbox;
@@ -37,14 +35,13 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
     });
 
     test("provideInlineCompletionItems returns null when disabled", async () => {
-        const completionProvider = {
+        const completionProvider: InlineCompletionsDependencies["completionProvider"] = {
             provideTextCompletion: async () => ({ insertText: "x" }),
-        } as unknown as { provideTextCompletion: () => Promise<{ insertText: string }> };
+        };
 
         const provider = new LiteLLMInlineCompletionProvider({
             getConfig: async () => ({ inlineCompletionsEnabled: false }) as LiteLLMConfig,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            completionProvider: completionProvider as any,
+            completionProvider,
         });
 
         const res = await provider.provideInlineCompletionItems(
@@ -74,9 +71,10 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
                     inlineCompletionsEnabled: true,
                     inlineCompletionsModelId: "m1",
                 }) as LiteLLMConfig,
-            completionProvider: { provideTextCompletion } as unknown as {
-                provideTextCompletion: () => Promise<{ insertText: string }>;
-            },
+            completionProvider: {
+                provideTextCompletion:
+                    provideTextCompletion as InlineCompletionsDependencies["completionProvider"]["provideTextCompletion"],
+            } as InlineCompletionsDependencies["completionProvider"],
         });
 
         const res = await provider.provideInlineCompletionItems(
@@ -108,9 +106,10 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
                     inlineCompletionsEnabled: true,
                     inlineCompletionsModelId: "m1",
                 }) as LiteLLMConfig,
-            completionProvider: { provideTextCompletion } as unknown as {
-                provideTextCompletion: () => Promise<{ insertText: string }>;
-            },
+            completionProvider: {
+                provideTextCompletion:
+                    provideTextCompletion as InlineCompletionsDependencies["completionProvider"]["provideTextCompletion"],
+            } as InlineCompletionsDependencies["completionProvider"],
         });
 
         const res = await provider.provideInlineCompletionItems(
@@ -141,9 +140,10 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
                     inlineCompletionsEnabled: true,
                     inlineCompletionsModelId: undefined,
                 }) as LiteLLMConfig,
-            completionProvider: { provideTextCompletion } as unknown as {
-                provideTextCompletion: () => Promise<{ insertText: string }>;
-            },
+            completionProvider: {
+                provideTextCompletion:
+                    provideTextCompletion as InlineCompletionsDependencies["completionProvider"]["provideTextCompletion"],
+            } as InlineCompletionsDependencies["completionProvider"],
         });
 
         const res = await provider.provideInlineCompletionItems(
@@ -174,9 +174,10 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
                     inlineCompletionsEnabled: true,
                     inlineCompletionsModelId: "m1",
                 }) as LiteLLMConfig,
-            completionProvider: { provideTextCompletion } as unknown as {
-                provideTextCompletion: () => Promise<{ insertText: string }>;
-            },
+            completionProvider: {
+                provideTextCompletion:
+                    provideTextCompletion as InlineCompletionsDependencies["completionProvider"]["provideTextCompletion"],
+            } as InlineCompletionsDependencies["completionProvider"],
         });
 
         const res = await provider.provideInlineCompletionItems(
@@ -207,9 +208,10 @@ suite("LiteLLMInlineCompletionProvider Unit Tests", () => {
                     inlineCompletionsEnabled: true,
                     inlineCompletionsModelId: "m1",
                 }) as LiteLLMConfig,
-            completionProvider: { provideTextCompletion } as unknown as {
-                provideTextCompletion: () => Promise<{ insertText: string }>;
-            },
+            completionProvider: {
+                provideTextCompletion:
+                    provideTextCompletion as InlineCompletionsDependencies["completionProvider"]["provideTextCompletion"],
+            } as InlineCompletionsDependencies["completionProvider"],
         });
 
         const res = await provider.provideInlineCompletionItems(
