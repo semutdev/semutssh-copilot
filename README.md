@@ -49,6 +49,7 @@ To use this extension, **YOU MUST** have an active GitHub Copilot plan (the Free
 * **🔁 Automatic Retry on Unsupported Params**: If a model rejects a flag, the connector can strip unsupported parameters and retry.
 * **📊 Token Tracking & Usage**: Real-time monitoring of input and output tokens for improved visibility into model costs and efficiency.
 * **✍️ Git Commit Generation**: Generate structured commit messages from staged changes directly in the SCM view.
+* **🧼 Smart Message Sanitization**: Automatically strips Markdown code blocks from generated commit messages for a cleaner SCM experience.
 * **🔍 Connection Diagnostics**: Quickly verify your proxy configuration with the new `Check Connection` command.
 * **⏱️ Inactivity Watchdog**: Optional timeout to keep long streams from hanging indefinitely.
 * **🚫🧠 Cache Bypass Controls**: Send `no-cache` headers to bypass LiteLLM caching (with provider-aware exceptions).
@@ -80,6 +81,7 @@ This extension also includes an **optional** inline completions provider (disabl
 
 ## 🆕 Recent Highlights
 
+* **🧼 SCM Message Sanitization**: Automatically cleans up generated commit messages by stripping triple backticks and Markdown artifacts.
 * **✍️ Git Commit Message Generation**: Stream generated commit messages directly into the SCM input box using any LiteLLM model.
 * **📊 Enhanced Token Awareness**: Real-time token counting and context window display in model tooltips (e.g., "↑128K in / ↓16K out").
 * **🔍 Connection Diagnostics**: New `LiteLLM: Check Connection` command to validate proxy settings and authentication immediately.
