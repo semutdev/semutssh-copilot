@@ -20,7 +20,7 @@ Integrates **SemutSSH AI API** into VS Code Copilot Chat via LiteLLM-compatible 
 
 - **VS Code 1.99.0+**
 - **GitHub Copilot** subscription (Free or Paid Individual plans work)
-- **SemutSSH API key** — Get yours at https://ai.semutssh.com
+- **SemutSSH API key** — Get yours at https://semutssh.com
 
 ---
 
