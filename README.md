@@ -195,4 +195,4 @@ MIT
 
 - **GitHub**: https://github.com/semutdev/semutssh-copilot
 - **Issues**: https://github.com/semutdev/semutssh-copilot/issues
-- **SemutSSH API**: https://ai.semutssh.com
+- **SemutSSH API**: https://semutssh.com
