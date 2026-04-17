@@ -1,7 +1,13 @@
-export type { V2EmittedPart as EmittedPart } from "../../providers/v2Types";
-import type { V2EmittedPart as EmittedPart } from "../../providers/v2Types";
 import { normalizeToolCallId } from "../../utils";
 import { StructuredLogger } from "../../observability/structuredLogger";
+
+export interface EmittedPartText { type: "text"; value: string; }
+export interface EmittedPartData { type: "data"; mimeType: string; data: unknown; }
+export interface EmittedPartThinking { type: "thinking"; value: string | string[]; id?: string; metadata?: Record<string, unknown>; }
+export interface EmittedPartToolCall { type: "tool_call"; index: number; id?: string; name?: string; args: string; }
+export interface EmittedPartResponse { type: "response"; usage?: { inputTokens?: number; outputTokens?: number }; }
+export interface EmittedPartFinish { type: "finish"; reason?: string; }
+export type EmittedPart = EmittedPartText | EmittedPartData | EmittedPartThinking | EmittedPartToolCall | EmittedPartResponse | EmittedPartFinish;
 
 export interface StreamingState {
     toolCallBuffers: Map<number, { id?: string; name?: string; args: string }>;
@@ -32,7 +38,7 @@ export function interpretStreamEvent(json: unknown, state: StreamingState): Emit
         parts.push({
             type: "data",
             mimeType: data.mimeType,
-            value: data,
+            data: data,
         });
         return parts;
     }
@@ -158,7 +164,7 @@ export function interpretStreamEvent(json: unknown, state: StreamingState): Emit
             parts.push({
                 type: "data",
                 mimeType: "application/vnd.litellm.usage+json",
-                value: {
+                data: {
                     kind: "usage",
                     promptTokens: response?.usage?.input_tokens,
                     completionTokens: response?.usage?.output_tokens,

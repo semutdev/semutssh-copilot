@@ -1,27 +1,21 @@
 import type * as vscode from "vscode";
 import type {
-    LiteLLMConfig,
     LiteLLMModelInfoResponse,
     OpenAIChatCompletionRequest,
-    LiteLLMResponsesRequest,
     LiteLLMModelInfo,
     LiteLLMTokenCounterRequest,
     LiteLLMTokenCounterResponse,
+    SemutsshConfig,
 } from "../types";
-import { transformToResponsesFormat } from "./responsesAdapter";
 import { Logger } from "../utils/logger";
 import { isAnthropicModel } from "../utils/modelUtils";
-import { LiteLLMTelemetry } from "../utils/telemetry";
 
-export class LiteLLMClient {
+export class SemutsshClient {
     constructor(
-        private readonly config: LiteLLMConfig,
+        private readonly config: SemutsshConfig,
         private readonly userAgent: string
     ) {}
 
-    /**
-     * Fetches model information from the LiteLLM proxy.
-     */
     async getModelInfo(token?: vscode.CancellationToken): Promise<LiteLLMModelInfoResponse> {
         const controller = new AbortController();
         if (token) {
@@ -40,32 +34,63 @@ export class LiteLLMClient {
         return resp.json() as Promise<LiteLLMModelInfoResponse>;
     }
 
-    /**
-     * Checks the connection to the LiteLLM proxy.
-     */
     async checkConnection(
         token?: vscode.CancellationToken
     ): Promise<{ latencyMs: number; modelCount: number; sampleModelIds: string[] }> {
         const startTime = Date.now();
-        const { data } = await this.getModelInfo(token);
+
+        // Try /model/info first; if it fails with 403 (key doesn't have permission),
+        // fall back to probing /chat/completions with a minimal request.
+        let modelCount = 0;
+        let sampleModelIds: string[] = [];
+
+        try {
+            const { data } = await this.getModelInfo(token);
+            modelCount = Array.isArray(data) ? data.length : 0;
+            sampleModelIds = Array.isArray(data)
+                ? data
+                      .slice(0, 5)
+                      .map(
+                          (entry: { model_info?: { key?: string }; model_name?: string }) =>
+                              entry.model_info?.key ?? entry.model_name ?? "unknown"
+                      )
+                : [];
+        } catch (firstErr) {
+            // If /model/info returns 403, the key only has access to /chat/completions.
+            // Probe with a minimal POST to confirm connectivity.
+            if (firstErr instanceof Error && firstErr.message.includes("403")) {
+                Logger.warn("Key cannot access /model/info — probing /chat/completions instead");
+                const controller = new AbortController();
+                if (token) {
+                    token.onCancellationRequested(() => controller.abort());
+                }
+                const probeResp = await fetch(`${this.config.url}/chat/completions`, {
+                    method: "POST",
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        model: "claude-opus-4-6",
+                        messages: [{ role: "user", content: "hi" }],
+                        stream: false,
+                    }),
+                    signal: controller.signal,
+                });
+                // Read and discard the body
+                try {
+                    await probeResp.text();
+                } catch {
+                    // ignore
+                }
+                modelCount = 0;
+                sampleModelIds = ["(key does not support model listing)"];
+            } else {
+                throw firstErr;
+            }
+        }
+
         const latencyMs = Date.now() - startTime;
-
-        const modelCount = Array.isArray(data) ? data.length : 0;
-        const sampleModelIds = Array.isArray(data)
-            ? data
-                  .slice(0, 5)
-                  .map(
-                      (entry: { model_info?: { key?: string }; model_name?: string }) =>
-                          entry.model_info?.key ?? entry.model_name ?? "unknown"
-                  )
-            : [];
-
         return { latencyMs, modelCount, sampleModelIds };
     }
 
-    /**
-     * Counts tokens for a prompt or messages using LiteLLM's token counter.
-     */
     async countTokens(
         request: LiteLLMTokenCounterRequest,
         token?: vscode.CancellationToken
@@ -92,39 +117,20 @@ export class LiteLLMClient {
         return resp.json() as Promise<LiteLLMTokenCounterResponse>;
     }
 
-    /**
-     * Sends a chat request to the LiteLLM proxy.
-     */
     async chat(
         request: OpenAIChatCompletionRequest,
         mode?: string,
         token?: vscode.CancellationToken,
         modelInfo?: LiteLLMModelInfo
     ): Promise<ReadableStream<Uint8Array>> {
-        const endpoint = this.getEndpoint(mode);
-        let body: OpenAIChatCompletionRequest | LiteLLMResponsesRequest = request;
+        let body = request;
 
         const isAnthropic = isAnthropicModel(request.model, modelInfo);
-
-        if (this.config.disableCaching) {
-            if (isAnthropic) {
-                Logger.info(`Bypassing 'disable caching' for Anthropic/Claude model: ${request.model}`);
-                LiteLLMTelemetry.reportMetric({
-                    requestId: `bypass-${Math.random().toString(36).substring(7)}`,
-                    model: request.model,
-                    status: "caching_bypassed",
-                });
-            } else {
-                body = this.withNoCacheExtraBody(body);
-            }
+        if (!isAnthropic) {
+            body = this.withNoCacheExtraBody(body);
         }
 
-        if (endpoint === "/responses") {
-            body = transformToResponsesFormat(request);
-            if (this.config.disableCaching && !isAnthropic) {
-                body = this.withNoCacheExtraBody(body);
-            }
-        }
+        const endpoint = mode === "completions" ? "/chat/completions" : "/chat/completions";
 
         Logger.trace(`Sending chat request to ${endpoint}`, { model: request.model });
         let response = await this.fetchWithRateLimit(
@@ -154,17 +160,11 @@ export class LiteLLMClient {
                 const strippedBody = JSON.parse(JSON.stringify(body));
                 const headers = this.getHeaders(request.model, modelInfo);
 
-                // 1. Handle explicit mentions of parameters in the error message
-                // Common patterns: "unsupported parameter: 'temperature'", "unexpected keyword argument 'top_p'"
                 const paramMatch = errorText.match(/(?:parameter|argument|key)\s+['"]?([a-zA-Z0-9_-]+)['"]?/i);
                 if (paramMatch && paramMatch[1]) {
-                    const paramName = paramMatch[1];
-                    Logger.info(`Stripping specific parameter: ${paramName}`);
-                    delete strippedBody[paramName];
+                    delete strippedBody[paramMatch[1]];
                 }
 
-                // Special-case: some providers reject a top-level `cache` object.
-                // LiteLLM proxy caching controls should live under extra_body.cache, but we defensively strip both.
                 if (errorLower.includes("unknown parameter") && errorLower.includes("cache")) {
                     delete strippedBody.cache;
                     if (strippedBody.extra_body && typeof strippedBody.extra_body === "object") {
@@ -184,23 +184,16 @@ export class LiteLLMClient {
                     delete headers["Cache-Control"];
                 }
 
-                // 2. Always strip caching if mentioned or if it was a likely culprit
                 if (errorLower.includes("no-cache") || errorLower.includes("no_cache")) {
-                    // Legacy (older implementation)
                     delete strippedBody.no_cache;
                     delete strippedBody["no-cache"];
-
-                    // Some backends interpret top-level `cache` as an OpenAI param and reject it
                     delete strippedBody.cache;
-
-                    // Current LiteLLM format: extra_body.cache["no-cache"]
                     if (strippedBody.extra_body && typeof strippedBody.extra_body === "object") {
                         const eb = strippedBody.extra_body as Record<string, unknown>;
                         const cache = eb.cache;
                         if (cache && typeof cache === "object") {
                             delete (cache as Record<string, unknown>)["no-cache"];
                         }
-                        // If cache object is now empty, remove it
                         if (
                             cache &&
                             typeof cache === "object" &&
@@ -208,7 +201,6 @@ export class LiteLLMClient {
                         ) {
                             delete eb.cache;
                         }
-                        // If extra_body is now empty, remove it
                         if (Object.keys(eb).length === 0) {
                             delete strippedBody.extra_body;
                         }
@@ -216,15 +208,11 @@ export class LiteLLMClient {
                     delete headers["Cache-Control"];
                 }
 
-                // 3. Fallback: if we couldn't identify a specific param but it's a 400,
-                // we might want to strip common problematic ones if they exist,
-                // but for now we rely on the regex match above.
-
                 response = await this.fetchWithRateLimit(
                     `${this.config.url}${endpoint}`,
                     {
                         method: "POST",
-                        headers: headers,
+                        headers,
                         body: JSON.stringify(strippedBody),
                     },
                     { token }
@@ -234,13 +222,13 @@ export class LiteLLMClient {
 
         if (!response.ok) {
             const errorText = await response.text();
-            Logger.error(`LiteLLM API error: ${response.status} ${response.statusText}`, errorText);
-            throw new Error(`LiteLLM API error: ${response.status} ${response.statusText}\n${errorText}`);
+            Logger.error(`Semutssh API error: ${response.status} ${response.statusText}`, errorText);
+            throw new Error(`Semutssh API error: ${response.status} ${response.statusText}\n${errorText}`);
         }
 
         if (!response.body) {
-            Logger.error("No response body from LiteLLM API");
-            throw new Error("No response body from LiteLLM API");
+            Logger.error("No response body from Semutssh API");
+            throw new Error("No response body from Semutssh API");
         }
 
         return response.body as ReadableStream<Uint8Array>;
@@ -255,29 +243,14 @@ export class LiteLLMClient {
             headers.Authorization = `Bearer ${this.config.key}`;
             headers["X-API-Key"] = this.config.key;
         }
-        if (this.config.disableCaching) {
-            const isAnthropic = modelId ? isAnthropicModel(modelId, modelInfo) : false;
-            if (!isAnthropic) {
-                headers["Cache-Control"] = "no-cache";
-            }
+        const isAnthropicFlag = modelId ? isAnthropicModel(modelId, modelInfo) : false;
+        if (!isAnthropicFlag) {
+            headers["Cache-Control"] = "no-cache";
         }
         return headers;
     }
 
-    private getEndpoint(mode?: string): string {
-        if (mode === "chat" || mode === "completions") {
-            return "/chat/completions";
-        }
-        if (mode === "responses") {
-            return "/responses";
-        }
-        // Default to chat/completions for backward compatibility
-        return "/chat/completions";
-    }
-
-    private withNoCacheExtraBody(
-        body: OpenAIChatCompletionRequest | LiteLLMResponsesRequest
-    ): OpenAIChatCompletionRequest | LiteLLMResponsesRequest {
+    private withNoCacheExtraBody(body: OpenAIChatCompletionRequest): OpenAIChatCompletionRequest {
         const extraBody = body.extra_body ?? {};
         const cache = (extraBody.cache ?? {}) as Record<string, unknown>;
         cache["no-cache"] = true;
@@ -328,11 +301,6 @@ export class LiteLLMClient {
         }
     }
 
-    /**
-     * Fetch with exponential back-off for rate limiting (429).
-     * Retries with exponential delay up to a maximum cumulative delay of 2 minutes.
-     * For other transient errors, it delegates to {@link fetchWithRetry}.
-     */
     async fetchWithRateLimit(
         url: string,
         init: RequestInit,

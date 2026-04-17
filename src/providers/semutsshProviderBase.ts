@@ -9,30 +9,18 @@ import type {
     LiteLLMModelInfo,
     OpenAIChatCompletionRequest,
     OpenAIFunctionToolDef,
-    LiteLLMTokenCounterRequest,
 } from "../types";
 import { convertMessages, convertTools, validateRequest } from "../utils";
-import {
-    convertV2MessagesToOpenAI,
-    convertV2MessagesToProviderMessages,
-    normalizeMessagesForV2Pipeline,
-    validateV2Messages,
-} from "../utils";
-import { LiteLLMClient } from "../adapters/litellmClient";
-import { ResponsesClient } from "../adapters/responsesClient";
-import { transformToResponsesFormat } from "../adapters/responsesAdapter";
 import { countTokens, trimMessagesToFitBudget } from "../adapters/tokenUtils";
-import { countTokensForV2Messages, trimV2MessagesForBudget } from "../adapters/tokenUtils";
 import { ConfigManager } from "../config/configManager";
 import { Logger } from "../utils/logger";
-import { LiteLLMTelemetry } from "../utils/telemetry";
 import {
     deriveCapabilitiesFromModelInfo,
     capabilitiesToVSCode,
     getModelTags as getDerivedModelTags,
 } from "../utils/modelCapabilities";
 import type { DerivedModelCapabilities } from "../utils/modelCapabilities";
-import type { V2ChatMessage } from "./v2Types";
+import { SemutsshClient } from "../adapters/semutsshClient";
 
 const KNOWN_PARAMETER_LIMITATIONS: Record<string, Set<string>> = {
     "claude-3-5-sonnet": new Set(["temperature"]),
@@ -49,21 +37,7 @@ const KNOWN_PARAMETER_LIMITATIONS: Record<string, Set<string>> = {
     "gpt-5": new Set(["temperature", "top_p", "presence_penalty", "frequency_penalty"]),
 };
 
-/**
- *
- * Shared orchestration base for all LiteLLM-backed VS Code language model providers.
- *
- * Responsibilities:
- * - Model discovery + caching
- * - Shared request ingress pipeline (normalize, validate, filter, trim)
- * - Endpoint routing + transport (chat/completions vs responses)
- * - Shared error parsing and capability mapping
- * - Shared quota/tool-redaction heuristics
- *
- * Non-responsibilities:
- * - VS Code protocol specifics (stream parsing, response part emission)
- */
-export abstract class LiteLLMProviderBase {
+export abstract class SemutsshProviderBase {
     protected readonly _configManager: ConfigManager;
     protected readonly _onDidChangeLanguageModelChatInformationEmitter = new vscode.EventEmitter<void>();
     readonly onDidChangeLanguageModelChatInformation = this._onDidChangeLanguageModelChatInformationEmitter.event;
@@ -82,18 +56,15 @@ export abstract class LiteLLMProviderBase {
         this._configManager = new ConfigManager(secrets);
     }
 
-    /** Exposes the ConfigManager for external access (e.g., commands that need configuration). */
     public getConfigManager(): ConfigManager {
         return this._configManager;
     }
 
-    /** Signals VS Code to refresh the Language Models view for this provider. */
     public refreshModelInformation(): void {
         Logger.info("Firing onDidChangeLanguageModelChatInformation");
         this._onDidChangeLanguageModelChatInformationEmitter.fire();
     }
 
-    /** Clears all model-related caches (model list, model info, parameter probe). */
     public clearModelCache(): void {
         Logger.info("Clearing model discovery cache");
         this._modelInfoCache.clear();
@@ -105,24 +76,14 @@ export abstract class LiteLLMProviderBase {
         Logger.info("Cleared cache");
     }
 
-    /** Returns the last discovered model list (may be empty if never fetched). */
     public getLastKnownModels(): LanguageModelChatInformation[] {
         return this._lastModelList;
     }
 
-    /**
-     * Public access to model info from cache.
-     */
     public getModelInfo(modelId: string): LiteLLMModelInfo | undefined {
         return this._modelInfoCache.get(modelId);
     }
 
-    /**
-     * Fetches and caches models from the LiteLLM proxy.
-     *
-     * This is shared between chat and completions providers so that both can reuse
-     * the same discovery + tag logic.
-     */
     public async discoverModels(
         options: { silent: boolean },
         token: vscode.CancellationToken
@@ -132,7 +93,7 @@ export abstract class LiteLLMProviderBase {
             return this._inFlightDiscovery;
         }
 
-        const TTL_MS = 30000; // 30 seconds
+        const TTL_MS = 30000;
         const now = Date.now();
         if (options.silent && this._lastModelList.length > 0 && now - this._modelListFetchedAtMs < TTL_MS) {
             Logger.trace("Returning cached models (within TTL)");
@@ -159,45 +120,56 @@ export abstract class LiteLLMProviderBase {
             const config = await this._configManager.getConfig();
             Logger.debug(`Config URL: ${config.url ? "set" : "not set"}`);
             if (!config.url) {
-                // When invoked from the Language Models view with silent=false, VS Code is allowed to prompt.
-                // Use the classic configuration workflow to capture baseUrl/apiKey into canonical storage.
                 if (!options.silent) {
-                    Logger.info("No base URL configured; prompting for classic configuration (silent=false)");
-                    await vscode.commands.executeCommand("litellm-connector.manage");
+                    Logger.info("No base URL configured; prompting for configuration (silent=false)");
+                    await vscode.commands.executeCommand("semutssh.configure");
 
                     const refreshed = await this._configManager.getConfig();
                     if (!refreshed.url) {
-                        Logger.info("Classic configuration was not completed; returning empty model list.");
+                        Logger.info("Configuration was not completed; returning empty model list.");
                         return [];
                     }
-                    Logger.debug("Classic configuration completed; continuing model discovery.");
+                    Logger.debug("Configuration completed; continuing model discovery.");
                 } else {
                     Logger.info("No base URL configured, returning empty model list.");
                     return [];
                 }
             }
 
-            // Re-read config after potential prompt.
             const effectiveConfig = await this._configManager.getConfig();
             if (!effectiveConfig.url) {
                 Logger.info("No base URL configured after prompt, returning empty model list.");
                 return [];
             }
 
-            const client = new LiteLLMClient(effectiveConfig, this.userAgent);
-            Logger.trace("Fetching model info from LiteLLM...");
-            const { data } = await client.getModelInfo(token);
+            const client = new SemutsshClient(effectiveConfig, this.userAgent);
+            Logger.trace("Fetching model info from Semutssh...");
 
-            if (!data || !Array.isArray(data)) {
+            let data: Array<{ model_info?: LiteLLMModelInfo; model_name?: string }> = [];
+            try {
+                const result = await client.getModelInfo(token);
+                data = result.data ?? [];
+            } catch (err) {
+                // If /model/info is blocked (403), fall back to custom models only.
+                const msg = err instanceof Error ? err.message : String(err);
+                if (msg.includes("403")) {
+                    Logger.warn("Key cannot access /model/info — using custom models only");
+                } else {
+                    Logger.error("Failed to fetch model info", err);
+                }
+                data = [];
+            }
+
+            if (!Array.isArray(data)) {
                 Logger.warn("Received invalid data format from /model/info", data);
-                return [];
+                data = [];
             }
 
             Logger.info(`Found ${data.length} models`);
+
             const infos: LanguageModelChatInformation[] = data.map(
                 (entry: { model_info?: LiteLLMModelInfo; model_name?: string }, index: number) => {
                     const modelId = entry.model_info?.key ?? entry.model_name ?? `model-${index}`;
-                    // const modelId = entry.model_info?.id ?? entry.model_info?.key ?? `model-${index}`;
                     const modelInfo = entry.model_info;
                     this._modelInfoCache.set(modelId, modelInfo);
 
@@ -205,7 +177,7 @@ export abstract class LiteLLMProviderBase {
                     this._derivedCapabilitiesCache.set(modelId, derived);
 
                     const capabilities = capabilitiesToVSCode(derived);
-                    const tags = getDerivedModelTags(modelId, derived, effectiveConfig.modelOverrides);
+                    const tags = getDerivedModelTags(modelId, derived, undefined);
 
                     const formatTokens = (num: number): string => {
                         if (num >= 1000000) {
@@ -219,9 +191,8 @@ export abstract class LiteLLMProviderBase {
 
                     const inputDesc = formatTokens(derived.rawContextWindow);
                     const outputDesc = formatTokens(derived.maxOutputTokens);
-                    const tooltip = `${modelInfo?.litellm_provider ?? "LiteLLM"} (${modelInfo?.mode ?? "responses"}) — Context: ${inputDesc} in / ${outputDesc} out`;
+                    const tooltip = `${modelInfo?.litellm_provider ?? "semutssh"} (${modelInfo?.mode ?? "chat"}) — Context: ${inputDesc} in / ${outputDesc} out`;
 
-                    // Derive family from provider to help Copilot shape requests correctly
                     const provider = modelInfo?.litellm_provider?.toLowerCase();
                     let family = "litellm";
                     if (provider === "openai") {
@@ -235,7 +206,7 @@ export abstract class LiteLLMProviderBase {
                         name: entry.model_name ?? modelId,
                         tooltip,
                         detail: `Context: ${inputDesc} | Output: ${outputDesc}`,
-                        family: family,
+                        family,
                         version: "1.0.0",
                         maxInputTokens: derived.rawContextWindow,
                         maxOutputTokens: derived.maxOutputTokens,
@@ -247,119 +218,74 @@ export abstract class LiteLLMProviderBase {
                 }
             );
 
-            const hasChanged = JSON.stringify(this._lastModelList) !== JSON.stringify(infos);
-            this._lastModelList = infos;
+            // Apply custom models
+            const customInfos: LanguageModelChatInformation[] = effectiveConfig.customModels.map((model) => {
+                const derived: DerivedModelCapabilities = {
+                    supportsTools: true,
+                    supportsVision: false,
+                    supportsStreaming: true,
+                    endpointMode: "chat",
+                    maxInputTokens: model.contextWindow,
+                    maxOutputTokens: model.maxOutputTokens,
+                    rawContextWindow: model.contextWindow,
+                };
+
+                return {
+                    id: model.id,
+                    name: model.name,
+                    tooltip: `${model.provider} (custom) — Context: ${model.contextWindow} in / ${model.maxOutputTokens} out`,
+                    detail: `Context: ${model.contextWindow} | Output: ${model.maxOutputTokens}`,
+                    family: model.provider.toLowerCase().includes("anthropic")
+                        ? "claude"
+                        : model.provider.toLowerCase().includes("openai")
+                          ? "gpt4"
+                          : "litellm",
+                    version: "1.0.0",
+                    maxInputTokens: derived.maxInputTokens,
+                    maxOutputTokens: derived.maxOutputTokens,
+                    capabilities: capabilitiesToVSCode(derived),
+                    tags: [],
+                } as vscode.LanguageModelChatInformation;
+            });
+
+            let allModels = [...infos, ...customInfos];
+
+            // Apply hidden filter
+            if (effectiveConfig.hiddenModels.length > 0) {
+                const hiddenSet = new Set(effectiveConfig.hiddenModels);
+                allModels = allModels.filter((m) => !hiddenSet.has(m.id));
+            }
+
+            const hasChanged = JSON.stringify(this._lastModelList) !== JSON.stringify(allModels);
+            this._lastModelList = allModels;
             this._modelListFetchedAtMs = Date.now();
 
             if (hasChanged) {
                 this.refreshModelInformation();
             }
 
-            return infos;
+            return allModels;
         } catch (err) {
             Logger.error("Failed to fetch models", err);
             return [];
         }
     }
 
-    /**
-     * Shared token counting logic.
-     */
     async provideTokenCount(
         model: vscode.LanguageModelChatInformation,
-        text: string | vscode.LanguageModelChatRequestMessage,
-        token: vscode.CancellationToken
+        text: string | LanguageModelChatRequestMessage,
+        _token: vscode.CancellationToken
     ): Promise<number> {
         const modelInfo = this._modelInfoCache.get(model.id);
-
-        // Always calculate local count first for immediate response
         const localCount = countTokens(text, model.id, modelInfo);
 
-        // For very small strings, local count is sufficient and avoids any overhead
         if (typeof text === "string" && text.length < 200) {
             return localCount;
         }
 
-        const contentKey = typeof text === "string" ? text : JSON.stringify(text);
-        const cacheKey = `${model.id}:${contentKey}`;
-
-        const cached = tokenCountCache.get(cacheKey);
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-            return cached.count;
-        }
-
-        // Check if there's already a pending background request for this content
-        if (pendingRequests.has(cacheKey)) {
-            // We return the local count immediately but don't block.
-            // The NEXT call will likely get the cached value once the pending one resolves.
-            return localCount;
-        }
-
-        // Kick off background refinement without awaiting it
-        this.refineTokenCountInBackground(model, text, cacheKey, token).catch((err) => {
-            Logger.trace(`Background token refinement failed (expected during rapid updates): ${err.message}`);
-        });
-
-        // Return local count immediately to keep UI responsive
         return localCount;
     }
 
-    /**
-     * Refines the token count in the background using LiteLLM and updates the cache.
-     */
-    private async refineTokenCountInBackground(
-        model: vscode.LanguageModelChatInformation,
-        text: string | vscode.LanguageModelChatRequestMessage,
-        cacheKey: string,
-        token: vscode.CancellationToken
-    ): Promise<void> {
-        // Debounce: Wait a bit to see if more requests for the same content come in
-        await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS));
-        if (token.isCancellationRequested) {
-            return;
-        }
-
-        const promise = (async () => {
-            try {
-                const config = await this._configManager.getConfig();
-                if (!config.url) {
-                    return 0;
-                }
-
-                const client = new LiteLLMClient(config, this.userAgent);
-                const request: LiteLLMTokenCounterRequest = { model: model.id };
-
-                if (typeof text === "string") {
-                    request.prompt = text;
-                } else {
-                    request.messages = convertMessages([text]);
-                }
-
-                const response = await client.countTokens(request, token);
-                tokenCountCache.set(cacheKey, { count: response.token_count, timestamp: Date.now() });
-
-                // Cleanup cache if it grows too large
-                if (tokenCountCache.size > 200) {
-                    const keys = Array.from(tokenCountCache.keys());
-                    tokenCountCache.delete(keys[0]);
-                }
-
-                return response.token_count;
-            } finally {
-                pendingRequests.delete(cacheKey);
-            }
-        })();
-
-        pendingRequests.set(cacheKey, promise);
-        await promise;
-    }
-
-    /**
-     * Determines the tags for a model based on its info and user overrides.
-     *
-     * Tags are used by VS Code to decide which models to surface for specific features
-     * (e.g. inline completions).
-     */
     protected getModelTags(
         modelId: string,
         modelInfo?: LiteLLMModelInfo,
@@ -374,7 +300,6 @@ export abstract class LiteLLMProviderBase {
 
         if (
             modelInfo?.supports_function_calling ||
-            modelInfo?.supports_vision ||
             modelInfo?.supported_openai_params?.includes("tools") ||
             modelInfo?.supported_openai_params?.includes("tool_choice")
         ) {
@@ -400,9 +325,6 @@ export abstract class LiteLLMProviderBase {
         return Array.from(tags);
     }
 
-    /**
-     * Extended options including internal telemetry fields.
-     */
     protected getTelemetryOptions(options: vscode.ProvideLanguageModelChatResponseOptions): {
         caller?: string;
         justification?: string;
@@ -417,14 +339,6 @@ export abstract class LiteLLMProviderBase {
         };
     }
 
-    /**
-     * Shared request builder used by all providers.
-     *
-     * Applies:
-     * - tool redaction (quota heuristic)
-     * - message trimming to budget
-     * - parameter filtering
-     */
     protected async buildOpenAIChatRequest(
         messages: readonly LanguageModelChatRequestMessage[],
         model: LanguageModelChatInformation,
@@ -432,7 +346,6 @@ export abstract class LiteLLMProviderBase {
         modelInfo?: LiteLLMModelInfo,
         caller?: string
     ): Promise<OpenAIChatCompletionRequest> {
-        // Log caller and justification for telemetry/debugging
         const telemetry = this.getTelemetryOptions(options);
         const justification = telemetry.justification;
         const effectiveCaller = caller || telemetry.caller;
@@ -442,31 +355,11 @@ export abstract class LiteLLMProviderBase {
             }`
         );
 
-        const config = await this._configManager.getConfig();
-
-        const toolRedaction = this.detectQuotaToolRedaction(
-            messages,
-            options.tools ?? [],
-            `build-${Math.random().toString(36).slice(2, 10)}`,
-            model.id,
-            config.disableQuotaToolRedaction === true,
-            caller
-        );
-        const toolConfig = convertTools({ ...options, tools: toolRedaction.tools });
+        const toolConfig = convertTools({ ...options, tools: options.tools ?? [] });
         const messagesToUse = trimMessagesToFitBudget(messages, toolConfig.tools, model, modelInfo);
 
         const openaiMessages = convertMessages(messagesToUse);
         validateRequest(messagesToUse);
-
-        Logger.debug(
-            `[buildOpenAIChatRequest] Final message count: ${openaiMessages.length}, Tool count: ${options.tools?.length ?? 0}`
-        );
-        if (openaiMessages.some((m) => m.tool_calls?.length || m.role === "tool")) {
-            const ids = openaiMessages.flatMap(
-                (m) => m.tool_calls?.map((tc) => tc.id) || (m.tool_call_id ? [m.tool_call_id] : [])
-            );
-            Logger.trace(`[buildOpenAIChatRequest] Tool IDs in request: ${ids.join(", ")}`);
-        }
 
         const requestBody: OpenAIChatCompletionRequest = {
             model: model.id,
@@ -481,16 +374,13 @@ export abstract class LiteLLMProviderBase {
         const mo = (options.modelOptions as Record<string, unknown>) ?? {};
 
         if (this.isParameterSupported("temperature", modelInfo, model.id)) {
-            const temp = mo.temperature as number | undefined;
-            requestBody.temperature = temp ?? (config.sendDefaultParameters ? 0.7 : undefined);
+            requestBody.temperature = mo.temperature as number | undefined;
         }
         if (this.isParameterSupported("frequency_penalty", modelInfo, model.id)) {
-            const fp = mo.frequency_penalty as number | undefined;
-            requestBody.frequency_penalty = fp ?? (config.sendDefaultParameters ? 0.2 : undefined);
+            requestBody.frequency_penalty = mo.frequency_penalty as number | undefined;
         }
         if (this.isParameterSupported("presence_penalty", modelInfo, model.id)) {
-            const pp = mo.presence_penalty as number | undefined;
-            requestBody.presence_penalty = pp ?? (config.sendDefaultParameters ? 0.1 : undefined);
+            requestBody.presence_penalty = mo.presence_penalty as number | undefined;
         }
 
         if (this.isParameterSupported("stop", modelInfo, model.id) && mo.stop) {
@@ -507,150 +397,20 @@ export abstract class LiteLLMProviderBase {
             requestBody.tool_choice = toolConfig.tool_choice;
         }
 
-        this.stripUnsupportedParametersFromRequest(
-            requestBody as unknown as Record<string, unknown>,
-            modelInfo,
-            model.id
-        );
+        this.stripUnsupportedParametersFromRequest(requestBody as unknown as Record<string, unknown>, modelInfo, model.id);
         return requestBody;
     }
 
-    protected async buildV2ChatRequest(
-        messages: readonly V2ChatMessage[],
-        model: LanguageModelChatInformation,
-        options: ProvideLanguageModelChatResponseOptions,
-        modelInfo?: LiteLLMModelInfo,
-        caller?: string
-    ): Promise<OpenAIChatCompletionRequest> {
-        const telemetry = this.getTelemetryOptions(options);
-        const justification = telemetry.justification;
-        const effectiveCaller = caller || telemetry.caller;
-        Logger.info(
-            `Building V2 request for model: ${model.id} | Caller: ${effectiveCaller || "unknown"} | Justification: ${
-                justification || "none"
-            }`
-        );
-
-        const config = await this._configManager.getConfig();
-
-        const toolConfig = convertTools(options);
-        const trimmedMessages = trimV2MessagesForBudget(messages, toolConfig.tools, model, modelInfo);
-        validateV2Messages(trimmedMessages);
-
-        if (model.id === "gemini-3.1-flash-lite-preview") {
-            for (const message of trimmedMessages) {
-                if ((message.role as number) === 3) {
-                    message.role = vscode.LanguageModelChatMessageRole.User;
-                }
-            }
-        }
-
-        const transportMessages = convertV2MessagesToProviderMessages(trimmedMessages);
-
-        const requestBody: OpenAIChatCompletionRequest = {
-            model: model.id,
-            messages: convertV2MessagesToOpenAI(trimmedMessages),
-            stream: true,
-            max_tokens:
-                typeof options.modelOptions?.max_tokens === "number"
-                    ? Math.min(options.modelOptions.max_tokens, model.maxOutputTokens)
-                    : model.maxOutputTokens,
-        };
-
-        const mo = (options.modelOptions as Record<string, unknown>) ?? {};
-
-        if (this.isParameterSupported("temperature", modelInfo, model.id)) {
-            const temp = mo.temperature as number | undefined;
-            requestBody.temperature = temp ?? (config.sendDefaultParameters ? 0.7 : undefined);
-        }
-        if (this.isParameterSupported("frequency_penalty", modelInfo, model.id)) {
-            const fp = mo.frequency_penalty as number | undefined;
-            requestBody.frequency_penalty = fp ?? (config.sendDefaultParameters ? 0.2 : undefined);
-        }
-        if (this.isParameterSupported("presence_penalty", modelInfo, model.id)) {
-            const pp = mo.presence_penalty as number | undefined;
-            requestBody.presence_penalty = pp ?? (config.sendDefaultParameters ? 0.1 : undefined);
-        }
-
-        if (this.isParameterSupported("stop", modelInfo, model.id) && mo.stop) {
-            requestBody.stop = mo.stop as string | string[];
-        }
-        if (this.isParameterSupported("top_p", modelInfo, model.id) && typeof mo.top_p === "number") {
-            requestBody.top_p = mo.top_p;
-        }
-
-        if (toolConfig.tools) {
-            requestBody.tools = toolConfig.tools as unknown as OpenAIFunctionToolDef[];
-        }
-        if (toolConfig.tool_choice) {
-            requestBody.tool_choice = toolConfig.tool_choice;
-        }
-
-        this.stripUnsupportedParametersFromRequest(
-            requestBody as unknown as Record<string, unknown>,
-            modelInfo,
-            model.id
-        );
-
-        void transportMessages;
-
-        return requestBody;
-    }
-
-    protected normalizeMessagesForV2Pipeline(
-        messages: readonly (
-            | vscode.LanguageModelChatRequestMessage
-            | vscode.LanguageModelChatMessage2
-            | vscode.LanguageModelChatMessage
-        )[]
-    ): V2ChatMessage[] {
-        return normalizeMessagesForV2Pipeline(messages);
-    }
-
-    protected countTokensForV2Messages(
-        input: string | V2ChatMessage | readonly V2ChatMessage[],
-        modelId?: string,
-        modelInfo?: LiteLLMModelInfo
-    ): number {
-        return countTokensForV2Messages(input, modelId, modelInfo);
-    }
-
-    /** Sends a request to LiteLLM, with /responses fallback when applicable. */
-    protected async sendRequestToLiteLLM(
+    protected async sendRequestToSemutssh(
         request: OpenAIChatCompletionRequest,
-        progress: vscode.Progress<vscode.LanguageModelResponsePart>,
         token: vscode.CancellationToken,
-        caller?: string,
         modelInfo?: LiteLLMModelInfo
     ): Promise<ReadableStream<Uint8Array>> {
         const config = await this._configManager.getConfig();
         if (!config.url) {
-            throw new Error("LiteLLM configuration not found. Please configure the LiteLLM base URL.");
+            throw new Error("Semutssh configuration not found. Please configure the Semutssh base URL.");
         }
-
-        const client = new LiteLLMClient(config, this.userAgent);
-
-        if (modelInfo?.mode === "responses") {
-            try {
-                const responsesClient = new ResponsesClient(config, this.userAgent);
-                const responsesRequest = transformToResponsesFormat(request);
-                await responsesClient.sendResponsesRequest(responsesRequest, progress, token, modelInfo);
-                LiteLLMTelemetry.reportMetric({
-                    requestId: `resp-${Math.random().toString(36).slice(2, 10)}`,
-                    model: request.model,
-                    status: "success",
-                    ...(caller && { caller }),
-                });
-                return new ReadableStream<Uint8Array>({
-                    start(controller) {
-                        controller.close();
-                    },
-                });
-            } catch (err) {
-                Logger.warn(`/responses failed, falling back to /chat/completions: ${err}`);
-            }
-        }
-
+        const client = new SemutsshClient(config, this.userAgent);
         return client.chat(request, modelInfo?.mode, token, modelInfo);
     }
 
@@ -731,7 +491,7 @@ export abstract class LiteLLMProviderBase {
         requestId: string,
         modelId: string,
         disableRedaction: boolean,
-        caller?: string
+        _caller?: string
     ): { tools: readonly vscode.LanguageModelChatTool[] } {
         if (disableRedaction || !tools.length || !messages.length) {
             return { tools };
@@ -757,13 +517,6 @@ export abstract class LiteLLMProviderBase {
             requestId,
             turnIndex,
         });
-        LiteLLMTelemetry.reportMetric({
-            requestId,
-            model: modelId,
-            status: "failure",
-            error: `quota_exceeded:${toolName}`,
-            ...(caller && { caller }),
-        });
 
         return { tools: filteredTools };
     }
@@ -771,9 +524,6 @@ export abstract class LiteLLMProviderBase {
     private findQuotaErrorInMessages(
         messages: readonly LanguageModelChatRequestMessage[]
     ): { toolName: string; errorText: string; turnIndex: number } | undefined {
-        // Be strict: only redact tools when we have strong evidence of a real rate/quota failure.
-        // Some providers echo the entire prompt/context into error text; avoid matching generic
-        // phrases that can appear in unrelated failures.
         const quotaRegex =
             /(\b429\b|rate\s*limit\s*exceeded|rate\s*limited|too\s*many\s*requests|insufficient\s*quota|quota\s*exceeded|exceeded\s*your\s*current\s*quota)/i;
         const toolRegex = /(insert_edit_into_file|replace_string_in_file)/i;
@@ -794,7 +544,6 @@ export abstract class LiteLLMProviderBase {
 
             return {
                 toolName: toolMatch[1],
-                // Keep logs usable and avoid dumping prompt/context.
                 errorText: this.sanitizeErrorTextForLogs(text),
                 turnIndex: i,
             };
@@ -809,7 +558,6 @@ export abstract class LiteLLMProviderBase {
             return "";
         }
 
-        // Remove common Copilot prompt wrappers if providers echo them back.
         const withoutCopilotContext = trimmed
             .replace(/<context>[\s\S]*?<\/context>/gi, "<context>…</context>")
             .replace(/<editorContext>[\s\S]*?<\/editorContext>/gi, "<editorContext>…</editorContext>")
@@ -818,7 +566,6 @@ export abstract class LiteLLMProviderBase {
                 "<reminderInstructions>…</reminderInstructions>"
             );
 
-        // Cap size.
         return withoutCopilotContext.length > 500 ? `${withoutCopilotContext.slice(0, 500)}…` : withoutCopilotContext;
     }
 
@@ -864,15 +611,3 @@ export abstract class LiteLLMProviderBase {
         return `API request failed with status ${statusCode}`;
     }
 }
-
-/**
- * Simple in-memory cache for token counts to avoid redundant network calls.
- */
-const tokenCountCache = new Map<string, { count: number; timestamp: number }>();
-const CACHE_TTL_MS = 60000; // Increase to 1 minute for better stability
-const DEBOUNCE_MS = 300;
-
-/**
- * Tracks pending background token count requests to avoid redundant network calls.
- */
-const pendingRequests = new Map<string, Promise<number>>();

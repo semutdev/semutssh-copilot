@@ -4,7 +4,7 @@ export class Logger {
     private static channel: vscode.LogOutputChannel;
 
     public static initialize(context: vscode.ExtensionContext): void {
-        this.channel = vscode.window.createOutputChannel("LiteLLM", { log: true });
+        this.channel = vscode.window.createOutputChannel("Semutssh Copilot", { log: true });
         context.subscriptions.push(this.channel);
     }
 

@@ -257,3 +257,19 @@ export interface ToolCallBuffer {
 
 /** OpenAI-style chat roles. */
 export type OpenAIChatRole = "system" | "user" | "assistant" | "tool";
+
+export interface CustomModel {
+    id: string;
+    name: string;
+    contextWindow: number;
+    maxOutputTokens: number;
+    provider: string;
+}
+
+export interface SemutsshConfig {
+    url: string;
+    key?: string;
+    customModels: CustomModel[];
+    hiddenModels: string[];
+    defaultModel: string;
+}

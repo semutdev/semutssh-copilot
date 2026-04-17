@@ -8,10 +8,10 @@ export function emitV2PartsToVSCode(
     for (const part of parts) {
         switch (part.type) {
             case "text":
-                progress.report(new vscode.LanguageModelTextPart(part.value));
+                progress.report(new vscode.LanguageModelTextPart(part.value ?? ""));
                 break;
             case "data":
-                progress.report(vscode.LanguageModelDataPart.json(part.value, part.mimeType));
+                progress.report(vscode.LanguageModelDataPart.json(part.data, part.mimeType));
                 break;
             case "thinking": {
                 const ThinkingPart = (vscode as unknown as Record<string, unknown>).LanguageModelThinkingPart as
@@ -19,7 +19,7 @@ export function emitV2PartsToVSCode(
                     | undefined;
                 if (ThinkingPart) {
                     progress.report(
-                        new ThinkingPart(part.value, part.id, part.metadata) as vscode.LanguageModelResponsePart
+                        new ThinkingPart(part.value ?? "", part.id, part.metadata) as vscode.LanguageModelResponsePart
                     );
                 }
                 break;

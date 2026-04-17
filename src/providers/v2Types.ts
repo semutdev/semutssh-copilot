@@ -1,3 +1,4 @@
+// Stub types — V2 pipeline removed, kept for backward-compatible type references
 import type * as vscode from "vscode";
 
 export type V2MessagePart =

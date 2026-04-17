@@ -1,17 +1,17 @@
 import * as vscode from "vscode";
 import type { ConfigManager } from "../config/configManager";
-import type { LiteLLMChatProvider } from "../providers";
-import { LiteLLMClient } from "../adapters/litellmClient";
+import type { SemutsshChatProvider } from "../providers";
+import { SemutsshClient } from "../adapters/semutsshClient";
 
-function createConfigHandler(configManager: ConfigManager, provider?: LiteLLMChatProvider) {
+function createConfigHandler(configManager: ConfigManager, provider?: SemutsshChatProvider) {
     return async () => {
         const config = await configManager.getConfig();
 
         const baseUrl = await vscode.window.showInputBox({
-            title: `LiteLLM Base URL`,
+            title: `Semutssh Base URL`,
             prompt: config.url
-                ? "Update your LiteLLM base URL"
-                : "Enter your LiteLLM base URL (e.g., http://localhost:4000 or https://api.litellm.ai)",
+                ? "Update your Semutssh base URL"
+                : "Enter your Semutssh base URL (e.g., https://ai.semutssh.com/v1)",
             ignoreFocusOut: true,
             value: config.url,
             placeHolder: "http://localhost:4000",
@@ -22,10 +22,10 @@ function createConfigHandler(configManager: ConfigManager, provider?: LiteLLMCha
         }
 
         let apiKey = await vscode.window.showInputBox({
-            title: `LiteLLM API Key`,
+            title: `Semutssh API Key`,
             prompt: config.key
-                ? "Update your LiteLLM API key"
-                : "Enter your LiteLLM API key (leave empty if not required)",
+                ? "Update your Semutssh API key"
+                : "Enter your Semutssh API key (leave empty if not required)",
             ignoreFocusOut: true,
             password: true,
             // Show empty to avoid leaking in plain text.
@@ -40,7 +40,7 @@ function createConfigHandler(configManager: ConfigManager, provider?: LiteLLMCha
         // If user enters the magic string, show the actual API key in plain text
         if (apiKey.trim() === "thisisunsafe" && config.key) {
             apiKey = await vscode.window.showInputBox({
-                title: `LiteLLM API Key`,
+                title: `Semutssh API Key`,
                 prompt: "Your API key (unmasked)",
                 ignoreFocusOut: true,
                 password: false,
@@ -73,20 +73,20 @@ function createConfigHandler(configManager: ConfigManager, provider?: LiteLLMCha
             }
         }
 
-        vscode.window.showInformationMessage(`LiteLLM configuration saved.`);
+        vscode.window.showInformationMessage(`Semutssh configuration saved.`);
     };
 }
 
 export function registerManageConfigCommand(
     context: vscode.ExtensionContext,
     configManager: ConfigManager,
-    provider?: LiteLLMChatProvider
+    provider?: SemutsshChatProvider
 ) {
-    return vscode.commands.registerCommand("litellm-connector.manage", createConfigHandler(configManager, provider));
+    return vscode.commands.registerCommand("semutssh.configure", createConfigHandler(configManager, provider));
 }
 
-export function registerShowModelsCommand(provider: LiteLLMChatProvider) {
-    return vscode.commands.registerCommand("litellm-connector.showModels", async () => {
+export function registerShowModelsCommand(provider: SemutsshChatProvider) {
+    return vscode.commands.registerCommand("semutssh.showModels", async () => {
         const models = provider.getLastKnownModels();
         if (!models.length) {
             vscode.window.showInformationMessage(
@@ -106,7 +106,7 @@ export function registerShowModelsCommand(provider: LiteLLMChatProvider) {
                     detail: m.tooltip,
                 })),
             {
-                title: "LiteLLM: Available Models (cached)",
+                title: "Semutssh: Available Models (cached)",
                 placeHolder: "Select a model id to copy to clipboard",
                 matchOnDescription: true,
                 matchOnDetail: true,
@@ -122,13 +122,13 @@ export function registerShowModelsCommand(provider: LiteLLMChatProvider) {
     });
 }
 
-export function registerReloadModelsCommand(provider: LiteLLMChatProvider) {
-    return vscode.commands.registerCommand("litellm-connector.reloadModels", async () => {
+export function registerReloadModelsCommand(provider: SemutsshChatProvider) {
+    return vscode.commands.registerCommand("semutssh.reloadModels", async () => {
         provider.clearModelCache();
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: "LiteLLM: Reloading models",
+                title: "Semutssh: Reloading models",
                 cancellable: false,
             },
             async () => {
@@ -142,44 +142,44 @@ export function registerReloadModelsCommand(provider: LiteLLMChatProvider) {
         );
 
         const count = provider.getLastKnownModels().length;
-        vscode.window.showInformationMessage(`LiteLLM: Reloaded ${count} models.`);
+        vscode.window.showInformationMessage(`Semutssh: Reloaded ${count} models.`);
     });
 }
 
 export function registerCheckConnectionCommand(configManager: ConfigManager) {
-    return vscode.commands.registerCommand("litellm-connector.checkConnection", async () => {
+    return vscode.commands.registerCommand("semutssh.checkConnection", async () => {
         const config = await configManager.getConfig();
         if (!config.url) {
-            vscode.window.showErrorMessage("LiteLLM base URL not configured.");
+            vscode.window.showErrorMessage("Semutssh base URL not configured.");
             return;
         }
 
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: "LiteLLM: Checking connection",
+                title: "Semutssh: Checking connection",
                 cancellable: true,
             },
             async (_progress, token) => {
-                const client = new LiteLLMClient(config, "litellm-connector-copilot");
+                const client = new SemutsshClient(config, "semutssh-copilot");
                 try {
                     const result = await client.checkConnection(token);
                     vscode.window.showInformationMessage(
-                        `LiteLLM: Connection successful! Latency: ${result.latencyMs}ms. Found ${result.modelCount} models.`
+                        `Semutssh: Connection successful! Latency: ${result.latencyMs}ms. Found ${result.modelCount} models.`
                     );
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
-                    vscode.window.showErrorMessage(`LiteLLM: Connection failed: ${msg}`);
+                    vscode.window.showErrorMessage(`Semutssh: Connection failed: ${msg}`);
                 }
             }
         );
     });
 }
 
-export function registerResetConfigCommand(configManager: ConfigManager, provider?: LiteLLMChatProvider) {
-    return vscode.commands.registerCommand("litellm-connector.reset", async () => {
+export function registerResetConfigCommand(configManager: ConfigManager, provider?: SemutsshChatProvider) {
+    return vscode.commands.registerCommand("semutssh.reset", async () => {
         const confirmed = await vscode.window.showWarningMessage(
-            "Are you sure you want to reset ALL LiteLLM configuration? This will clear your Base URL, API Key, and all custom settings.",
+            "Are you sure you want to reset ALL Semutssh configuration? This will clear your Base URL, API Key, and all custom settings.",
             { modal: true },
             "Reset All"
         );
@@ -191,10 +191,10 @@ export function registerResetConfigCommand(configManager: ConfigManager, provide
                     provider.clearModelCache();
                     //provider.refreshModelInformation();
                 }
-                vscode.window.showInformationMessage("LiteLLM configuration has been reset.");
+                vscode.window.showInformationMessage("Semutssh configuration has been reset.");
             } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
-                vscode.window.showErrorMessage(`LiteLLM: Reset failed: ${msg}`);
+                vscode.window.showErrorMessage(`Semutssh: Reset failed: ${msg}`);
             }
         }
     });

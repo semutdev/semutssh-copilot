@@ -1,5 +1,17 @@
 import * as vscode from "vscode";
-import type { LogLevel, LogEvent, EventType } from "./types";
+
+type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
+type EventType = string;
+interface LogEvent {
+    timestamp: string;
+    requestId: string;
+    level: LogLevel;
+    event: EventType;
+    data: Record<string, unknown>;
+    model?: string;
+    endpoint?: string;
+    caller?: string;
+}
 
 /**
  * Structured JSONL logger for the v2 provider baseline.
@@ -27,7 +39,7 @@ export class StructuredLogger {
     public static initialize(context: vscode.ExtensionContext): void {
         // Structured logger gets a dedicated channel to avoid mixing with
         // the legacy top-level Logger output at "LiteLLM".
-        this.channel = vscode.window.createOutputChannel("LiteLLM Structured", { log: true });
+        this.channel = vscode.window.createOutputChannel("Semutssh Structured", { log: true });
         context.subscriptions.push(this.channel);
         this.info("logger.initialized", {
             note: "Use the log level dropdown in the output panel to change verbosity",

@@ -1,205 +1,92 @@
 {
-	"name": "litellm-connector-copilot",
-	"publisher": "GethNet",
-	"contributors": [
-		"amwdrizz"
-	],
-	"maintainers": [
-		"amwdrizz"
-	],
-	"sponsor": {
-		"url": "https://buymeacoffee.com/amwdrizz"
-	},
-	"displayName": "LiteLLM Connector for Copilot",
-	"description": "An extension that integrates LiteLLM proxy into Copilot",
-	"icon": "assets/logo.png",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/gethnet/litellm-connector-copilot"
-	},
-	"version": "1.5.1",
-	"preview": false,
+	"name": "semutssh-copilot",
+	"publisher": "semutdev",
+	"displayName": "Semutssh Copilot",
+	"description": "Integrates SemutSSH AI API into VS Code Copilot Chat via LiteLLM-compatible endpoints.",
+	"repository": "https://github.com/semutdev/semutssh-copilot",
+	"version": "1.0.0",
 	"engines": {
-		"vscode": "^1.110.0"
+		"vscode": "^1.99.0"
 	},
 	"categories": [
 		"AI",
-		"Chat",
-		"Machine Learning",
 		"Other"
 	],
 	"keywords": [
-		"litellm",
-		"llm",
 		"copilot",
-		"ai-connector",
-		"openai",
-		"anthropic",
-		"local-llm"
+		"ai",
+		"litellm",
+		"semutssh"
 	],
-	"galleryBanner": {
-		"color": "#100f11",
-		"theme": "dark"
-	},
-	"badges": [
-		{
-			"url": "https://img.shields.io/github/stars/gethnet/litellm-connector-copilot?style=social",
-			"description": "Star litellm-connector-copilot on Github",
-			"href": "https://github.com/gethnet/litellm-connector-copilot"
-		}
-	],
-	"homepage": "https://github.com/gethnet/litellm-connector-copilot",
-	"bugs": {
-		"url": "https://github.com/gethnet/litellm-connector-copilot/issues"
-	},
-	"license": "Apache-2.0",
+	"license": "MIT",
 	"activationEvents": [
-		"onLanguageModelChatProvider:litellm-connector",
+		"onLanguageModelChatProvider:semutssh",
 		"onStartupFinished"
 	],
 	"contributes": {
 		"languageModelChatProviders": [
 			{
-				"vendor": "litellm-connector",
-				"displayName": "LiteLLM",
-				"managementCommand": "litellm-connector.manage"
+				"vendor": "semutssh",
+				"displayName": "Semutssh",
+				"managementCommand": "semutssh.configure"
 			}
 		],
 		"commands": [
 			{
-				"command": "litellm-connector.manage",
-				"title": "Manage LiteLLM Provider"
+				"command": "semutssh.configure",
+				"title": "Configure Semutssh"
 			},
 			{
-				"command": "litellm-connector.inlineCompletions.selectModel",
-				"title": "LiteLLM: Select Inline Completion Model"
+				"command": "semutssh.showModels",
+				"title": "Semutssh: Show Available Models"
 			},
 			{
-				"command": "litellm-connector.showModels",
-				"title": "LiteLLM: Show Available Models"
+				"command": "semutssh.reloadModels",
+				"title": "Semutssh: Reload Models"
 			},
 			{
-				"command": "litellm-connector.reloadModels",
-				"title": "LiteLLM: Reload Models"
+				"command": "semutssh.checkConnection",
+				"title": "Semutssh: Check Connection"
 			},
 			{
-				"command": "litellm-connector.checkConnection",
-				"title": "LiteLLM: Check Connection"
+				"command": "semutssh.reset",
+				"title": "Semutssh: Reset All Configuration"
 			},
 			{
-				"command": "litellm-connector.reset",
-				"title": "LiteLLM: Reset All Configuration (Nuke)"
-			},
-			{
-				"command": "litellm-connector.generateCommitMessage",
-				"title": "Generate Commit Message",
-				"icon": "$(sparkle)"
-			},
-			{
-				"command": "litellm-connector.generateCommitMessage.selectModel",
-				"title": "LiteLLM: Select Commit Message Model"
+				"command": "semutssh.manageModels",
+				"title": "Semutssh: Manage Models"
 			}
 		],
-		"menus": {
-			"scm/title": [
-				{
-					"command": "litellm-connector.generateCommitMessage",
-					"group": "navigation",
-					"when": "config.litellm-connector.commitModelIdOverride != ''"
-				}
-			]
-		},
 		"configuration": {
-			"title": "LiteLLM Connector",
+			"title": "Semutssh Copilot",
 			"properties": {
-				"litellm-connector.baseUrl": {
+				"semutssh.baseUrl": {
 					"type": "string",
-					"default": "",
-					"description": "Base URL for the LiteLLM proxy server (used for model discovery and requests)."
+					"default": "https://ai.semutssh.com/v1",
+					"description": "Base URL for the Semutssh API server."
 				},
-				"litellm-connector.apiKeySecretRef": {
+				"semutssh.apiKeySecretRef": {
 					"type": "string",
 					"default": "default",
 					"description": "Reference name for the API key stored in VS Code SecretStorage."
 				},
-				"litellm-connector.inlineCompletions.enabled": {
-					"type": "boolean",
-					"default": false,
-					"description": "Enable LiteLLM inline completions via VS Code's stable inline completion provider API. Disable to use Copilot or other inline completion providers.",
-					"deprecationMessage": "This is going away"
+				"semutssh.customModels": {
+					"type": "array",
+					"default": [],
+					"description": "List of custom models added manually by the user."
 				},
-				"litellm-connector.inlineCompletions.modelId": {
+				"semutssh.hiddenModels": {
+					"type": "array",
+					"default": [],
+					"description": "List of model IDs to hide from the model picker."
+				},
+				"semutssh.defaultModel": {
 					"type": "string",
 					"default": "",
-					"markdownDescription": "Use VS Code's inline chat default model setting instead. Configure [In-line Chat Model](vscode://settings/inlineChat.defaultModel) or Settings UI → Inline Chat → Default Model.",
-					"markdownDeprecationMessage": "Use VS Code's ['inlineChat.defaultModel' setting](vscode://settings/inlineChat.defaultModel) to control the default model for inline chat."
-				},
-				"litellm-connector.modelIdOverride": {
-					"type": "string",
-					"default": "",
-					"markdownDeprecationMessage": "Deprecated: use `litellm-connector.inlineCompletions.modelId` instead.",
-					"description": "(Deprecated) Optional: force a specific LiteLLM model id for inline completions."
-				},
-				"litellm-connector.commitModelIdOverride": {
-					"type": "string",
-					"default": "",
-					"description": "Override the model ID for git commit message generation. If empty, the feature is disabled.",
-					"markdownDescription": "Override the model ID for git commit message generation. [Select Model](command:litellm-connector.generateCommitMessage.selectModel) to choose from discovered models. If empty, the feature is disabled."
-				},
-				"litellm-connector.emitUsageData": {
-					"type": "boolean",
-					"default": false,
-					"description": "Emit token usage metadata as a response data part to probe whether Copilot or VS Code surfaces context usage in chat UI.",
-					"tags": [
-						"experimental"
-					]
-				},
-				"litellm-connector.enableResponsesApi": {
-					"type": "boolean",
-					"default": false,
-					"description": "Enables support for VSCode Response API <-> LiteLLM Responses",
-					"tags": [
-						"experimental"
-					]
-				},
-				"litellm-connector.disableQuotaToolRedaction": {
-					"type": "boolean",
-					"default": false,
-					"description": "Disable per-turn tool redaction when a quota error is detected in chat history. Leave off to keep redaction enabled."
-				},
-				"litellm-connector.modelOverrides": {
-					"type": "object",
-					"default": {},
-					"description": "Override or add tags for specific models. Key is the Model ID (e.g. 'gpt-4o'), value is an array of tags (e.g. ['inline-completions']).",
-					"additionalProperties": {
-						"type": "array",
-						"items": {
-							"type": "string"
-						}
-					}
-				},
-				"litellm-connector.inactivityTimeout": {
-					"type": "number",
-					"default": 60,
-					"description": "Timeout in seconds of inactivity before the LiteLLM proxy connection is considered idle."
-				},
-				"litellm-connector.disableCaching": {
-					"type": "boolean",
-					"default": true,
-					"description": "When enabled, LiteLLM caching will be bypassed by sending 'no-cache: true' and 'Cache-Control: no-cache' headers.",
-					"tags": [
-						"experimental"
-					]
-				},
-				"litellm-connector.sendDefaultParameters": {
-					"type": "boolean",
-					"default": false,
-					"markdownDescription": "When enabled, LiteLLM Connector will send default values for temperature (0.7), frequency_penalty (0.2), and presence_penalty (0.1) if not explicitly provided by VS Code. Recommended: false.",
-					"deprecationMessage": "This setting is temporary and will be removed in a future version. Defaults will be omitted by default."
+					"description": "Model ID to use as the default model."
 				}
 			}
-		},
-		"keybindings": []
+		}
 	},
 	"main": "./dist/extension.js",
 	"browser": "./dist/web/extension.js",
@@ -215,13 +102,8 @@
 	"scripts": {
 		"clean": "rm -rf ./dist ./out ./coverage ./test-results",
 		"clean:build": "rm -rf ./dist ./out",
-		"clean:tests": "rm -rf ./coverage ./test-results",
 		"compile": "tsc -p ./",
-		"vscode:pack:dev": "npm run clean:build && tsc --noEmit && node esbuild.js && npx vsce package",
-		"vscode:pack": "npm run clean:build && tsc --noEmit && node esbuild.js --production && npx vsce package",
-		"package:marketplace": "cp README.md README.github.md && cp README.marketplace.md README.md && npm run vscode:pack && mv README.github.md README.md",
-		"download-api": "dts main && mv vscode.d.ts src/ && dts dev && mv vscode.proposed.*.d.ts src/",
-		"postinstall": "npm run download-api",
+		"package": "npm run clean:build && tsc --noEmit && node esbuild.js --production && npx vsce package",
 		"lint": "eslint --fix",
 		"lint:check": "eslint",
 		"format": "prettier --write .",
@@ -229,26 +111,21 @@
 		"watch": "tsc -watch -p ./",
 		"pretest": "npm run compile",
 		"test": "xvfb-run vscode-test --args=\"--no-sandbox\"",
-		"test:report": "export VSCODE_TEST_RESULTS_DIR=$PWD/test-results && mkdir -p $VSCODE_TEST_RESULTS_DIR && npm run test",
-		"test:coverage": "npm run clean && npm run pretest && node -e \"const fs = require('fs'); const path = require('path'); const coveragePath = path.join(process.cwd(), 'coverage'); if (fs.existsSync(coveragePath)) fs.rmSync(coveragePath, { recursive: true, force: true });\" && export VSCODE_TEST_RESULTS_DIR=$PWD/test-results && mkdir -p $VSCODE_TEST_RESULTS_DIR && xvfb-run vscode-test --args=\"--no-sandbox\" --coverage --coverage-output coverage --coverage-reporter lcovonly --coverage-reporter html --coverage-reporter text-summary",
-		"bump-version": "node scripts/bump-version.js"
+		"download-api": "dts main && mv vscode.d.ts src/ && dts dev && mv vscode.proposed.*.d.ts src/",
+		"postinstall": "npm run download-api"
 	},
 	"devDependencies": {
-		"@eslint/js": "^10.0.0",
-		"@stylistic/eslint-plugin": "^5.7.1",
+		"@eslint/js": "^9.39.4",
+		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/mocha": "^10.0.10",
 		"@types/node": "^22.19.11",
 		"@types/sinon": "^21.0.0",
-		"@types/vscode": "^1.107.0",
+		"@types/vscode": "^1.99.0",
 		"@vscode/dts": "^0.4.1",
-		"@vscode/test-cli": "^0.0.12",
 		"@vscode/test-electron": "^2.5.2",
 		"@vscode/vsce": "^3.7.0",
 		"esbuild": "^0.27.3",
 		"eslint": "^10.0.0",
-		"mocha-junit-reporter": "^2.2.1",
-		"mocha-multi-reporters": "^1.5.0",
-		"ovsx": "^0.10.6",
 		"prettier": "^3.1.0",
 		"rimraf": "^6.0.1",
 		"sinon": "^21.0.1",
