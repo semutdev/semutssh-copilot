@@ -1,13 +1,43 @@
 import { normalizeToolCallId } from "../../utils";
 import { StructuredLogger } from "../../observability/structuredLogger";
 
-export interface EmittedPartText { type: "text"; value: string; }
-export interface EmittedPartData { type: "data"; mimeType: string; data: unknown; }
-export interface EmittedPartThinking { type: "thinking"; value: string | string[]; id?: string; metadata?: Record<string, unknown>; }
-export interface EmittedPartToolCall { type: "tool_call"; index: number; id?: string; name?: string; args: string; }
-export interface EmittedPartResponse { type: "response"; usage?: { inputTokens?: number; outputTokens?: number }; }
-export interface EmittedPartFinish { type: "finish"; reason?: string; }
-export type EmittedPart = EmittedPartText | EmittedPartData | EmittedPartThinking | EmittedPartToolCall | EmittedPartResponse | EmittedPartFinish;
+export interface EmittedPartText {
+    type: "text";
+    value: string;
+}
+export interface EmittedPartData {
+    type: "data";
+    mimeType: string;
+    data: unknown;
+}
+export interface EmittedPartThinking {
+    type: "thinking";
+    value: string | string[];
+    id?: string;
+    metadata?: Record<string, unknown>;
+}
+export interface EmittedPartToolCall {
+    type: "tool_call";
+    index: number;
+    id?: string;
+    name?: string;
+    args: string;
+}
+export interface EmittedPartResponse {
+    type: "response";
+    usage?: { inputTokens?: number; outputTokens?: number };
+}
+export interface EmittedPartFinish {
+    type: "finish";
+    reason?: string;
+}
+export type EmittedPart =
+    | EmittedPartText
+    | EmittedPartData
+    | EmittedPartThinking
+    | EmittedPartToolCall
+    | EmittedPartResponse
+    | EmittedPartFinish;
 
 export interface StreamingState {
     toolCallBuffers: Map<number, { id?: string; name?: string; args: string }>;

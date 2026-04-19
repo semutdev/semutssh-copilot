@@ -51,9 +51,7 @@ export class SemutsshChatProvider extends SemutsshProviderBase implements Langua
         const modelWithTags = model as vscode.LanguageModelChatInformation & { tags?: string[] };
         const caller = telemetry.caller || modelWithTags.tags?.[0] || "chat";
 
-        Logger.info(
-            `Chat request started | RequestID: ${requestId} | Model: ${model.id} | Caller: ${caller}`
-        );
+        Logger.info(`Chat request started | RequestID: ${requestId} | Model: ${model.id} | Caller: ${caller}`);
 
         const trackingProgress: Progress<LanguageModelResponsePart> = {
             report: (part) => {

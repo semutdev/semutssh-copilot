@@ -555,7 +555,10 @@ export function validateV2Messages(messages: readonly V2ChatMessage[]): void {
                         return undefined;
                 }
             })
-            .filter((part: vscode.LanguageModelInputPart | undefined): part is vscode.LanguageModelInputPart => part !== undefined),
+            .filter(
+                (part: vscode.LanguageModelInputPart | undefined): part is vscode.LanguageModelInputPart =>
+                    part !== undefined
+            ),
     })) as vscode.LanguageModelChatRequestMessage[];
 
     validateRequest(downgraded);

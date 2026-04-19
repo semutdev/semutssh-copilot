@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { LiteLLMModelInfo } from "../types";
 import { isAnthropicModel } from "../utils/modelUtils";
 import { selectTokenizer } from "./tokenizers/selectTokenizer";
-import type { V2ChatMessage } from "../providers/v2Types";  
+import type { V2ChatMessage } from "../providers/v2Types";
 
 export const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
 export const DEFAULT_CONTEXT_LENGTH = 128000;

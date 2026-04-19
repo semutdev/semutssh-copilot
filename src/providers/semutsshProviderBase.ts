@@ -5,11 +5,7 @@ import type {
     ProvideLanguageModelChatResponseOptions,
 } from "vscode";
 
-import type {
-    LiteLLMModelInfo,
-    OpenAIChatCompletionRequest,
-    OpenAIFunctionToolDef,
-} from "../types";
+import type { LiteLLMModelInfo, OpenAIChatCompletionRequest, OpenAIFunctionToolDef } from "../types";
 import { convertMessages, convertTools, validateRequest } from "../utils";
 import { countTokens, trimMessagesToFitBudget } from "../adapters/tokenUtils";
 import { ConfigManager } from "../config/configManager";
@@ -397,7 +393,11 @@ export abstract class SemutsshProviderBase {
             requestBody.tool_choice = toolConfig.tool_choice;
         }
 
-        this.stripUnsupportedParametersFromRequest(requestBody as unknown as Record<string, unknown>, modelInfo, model.id);
+        this.stripUnsupportedParametersFromRequest(
+            requestBody as unknown as Record<string, unknown>,
+            modelInfo,
+            model.id
+        );
         return requestBody;
     }
 

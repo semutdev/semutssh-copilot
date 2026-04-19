@@ -2,10 +2,7 @@ import * as vscode from "vscode";
 import type { ConfigManager } from "../config/configManager";
 import type { CustomModel } from "../types";
 
-export function registerManageModelsCommand(
-    context: vscode.ExtensionContext,
-    configManager: ConfigManager
-) {
+export function registerManageModelsCommand(context: vscode.ExtensionContext, configManager: ConfigManager) {
     return vscode.commands.registerCommand("semutssh.manageModels", async () => {
         const config = await configManager.getConfig();
 
@@ -21,7 +18,9 @@ export function registerManageModelsCommand(
             }
         );
 
-        if (!choice) {return;}
+        if (!choice) {
+            return;
+        }
 
         if (choice.value === "add") {
             await addCustomModel(configManager, config.customModels);
@@ -33,17 +32,16 @@ export function registerManageModelsCommand(
     });
 }
 
-async function addCustomModel(
-    configManager: ConfigManager,
-    existing: CustomModel[]
-): Promise<void> {
+async function addCustomModel(configManager: ConfigManager, existing: CustomModel[]): Promise<void> {
     const id = await vscode.window.showInputBox({
         title: "Custom Model ID",
         prompt: "Enter the model ID (e.g., semut-claude-opus-4-6)",
         ignoreFocusOut: true,
         validateInput: (v) => (!v?.trim() ? "Model ID is required" : null),
     });
-    if (!id) {return;}
+    if (!id) {
+        return;
+    }
 
     const name = await vscode.window.showInputBox({
         title: "Display Name",
@@ -51,7 +49,9 @@ async function addCustomModel(
         ignoreFocusOut: true,
         value: id,
     });
-    if (!name) {return;}
+    if (!name) {
+        return;
+    }
 
     const contextStr = await vscode.window.showInputBox({
         title: "Context Window (tokens)",
@@ -59,11 +59,15 @@ async function addCustomModel(
         ignoreFocusOut: true,
         value: "200000",
         validateInput: (v) => {
-            if (!v || isNaN(Number(v)) || Number(v) <= 0) {return "Enter a valid number";}
+            if (!v || isNaN(Number(v)) || Number(v) <= 0) {
+                return "Enter a valid number";
+            }
             return null;
         },
     });
-    if (!contextStr) {return;}
+    if (!contextStr) {
+        return;
+    }
 
     const maxOutStr = await vscode.window.showInputBox({
         title: "Max Output Tokens",
@@ -71,11 +75,15 @@ async function addCustomModel(
         ignoreFocusOut: true,
         value: "8192",
         validateInput: (v) => {
-            if (!v || isNaN(Number(v)) || Number(v) <= 0) {return "Enter a valid number";}
+            if (!v || isNaN(Number(v)) || Number(v) <= 0) {
+                return "Enter a valid number";
+            }
             return null;
         },
     });
-    if (!maxOutStr) {return;}
+    if (!maxOutStr) {
+        return;
+    }
 
     const provider = await vscode.window.showQuickPick(
         [
@@ -89,7 +97,9 @@ async function addCustomModel(
             placeHolder: "Select provider",
         }
     );
-    if (!provider) {return;}
+    if (!provider) {
+        return;
+    }
 
     const newModel: CustomModel = {
         id: id.trim(),
@@ -106,10 +116,7 @@ async function addCustomModel(
     vscode.window.showInformationMessage(`Custom model "${newModel.name}" added.`);
 }
 
-async function manageHiddenModels(
-    configManager: ConfigManager,
-    config: { hiddenModels: string[] }
-): Promise<void> {
+async function manageHiddenModels(configManager: ConfigManager, config: { hiddenModels: string[] }): Promise<void> {
     if (config.hiddenModels.length === 0) {
         vscode.window.showInformationMessage(
             "No hidden models. Hidden models are set automatically when you click the eye icon in the model list."
@@ -126,7 +133,9 @@ async function manageHiddenModels(
         }
     );
 
-    if (!toRemove || toRemove.length === 0) {return;}
+    if (!toRemove || toRemove.length === 0) {
+        return;
+    }
 
     const removedSet = new Set(toRemove.map((m) => m.label));
     const remaining = config.hiddenModels.filter((m) => !removedSet.has(m));
@@ -142,9 +151,7 @@ async function setDefaultModel(
     const allModelIds = [...config.customModels.map((m) => m.id)];
 
     if (allModelIds.length === 0) {
-        vscode.window.showInformationMessage(
-            "No custom models available. Add a custom model first."
-        );
+        vscode.window.showInformationMessage("No custom models available. Add a custom model first.");
         return;
     }
 
@@ -157,7 +164,9 @@ async function setDefaultModel(
         }
     );
 
-    if (!selected) {return;}
+    if (!selected) {
+        return;
+    }
 
     await configManager.setDefaultModel(selected.label);
     vscode.window.showInformationMessage(`Default model set to: ${selected.label}`);

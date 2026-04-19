@@ -28,14 +28,11 @@ export class ConfigManager {
             .trim();
         const key = await this.secrets.get(this.getApiKeySecretStorageKey(apiKeySecretRef));
 
-        const customModels = (vscode.workspace
-            .getConfiguration()
-            .get<CustomModel[]>(ConfigManager.CUSTOM_MODELS_KEY, []) ?? [])
-            .filter((m) => m && m.id && m.id.trim().length > 0);
+        const customModels = (
+            vscode.workspace.getConfiguration().get<CustomModel[]>(ConfigManager.CUSTOM_MODELS_KEY, []) ?? []
+        ).filter((m) => m && m.id && m.id.trim().length > 0);
 
-        const hiddenModels = vscode.workspace
-            .getConfiguration()
-            .get<string[]>(ConfigManager.HIDDEN_MODELS_KEY, []);
+        const hiddenModels = vscode.workspace.getConfiguration().get<string[]>(ConfigManager.HIDDEN_MODELS_KEY, []);
 
         const defaultModel = vscode.workspace
             .getConfiguration()
@@ -72,29 +69,17 @@ export class ConfigManager {
 
     async setCustomModels(models: CustomModel[]): Promise<void> {
         const settings = vscode.workspace.getConfiguration();
-        await settings.update(
-            ConfigManager.CUSTOM_MODELS_KEY,
-            models,
-            vscode.ConfigurationTarget.Global
-        );
+        await settings.update(ConfigManager.CUSTOM_MODELS_KEY, models, vscode.ConfigurationTarget.Global);
     }
 
     async setHiddenModels(models: string[]): Promise<void> {
         const settings = vscode.workspace.getConfiguration();
-        await settings.update(
-            ConfigManager.HIDDEN_MODELS_KEY,
-            models,
-            vscode.ConfigurationTarget.Global
-        );
+        await settings.update(ConfigManager.HIDDEN_MODELS_KEY, models, vscode.ConfigurationTarget.Global);
     }
 
     async setDefaultModel(modelId: string): Promise<void> {
         const settings = vscode.workspace.getConfiguration();
-        await settings.update(
-            ConfigManager.DEFAULT_MODEL_KEY,
-            modelId.trim(),
-            vscode.ConfigurationTarget.Global
-        );
+        await settings.update(ConfigManager.DEFAULT_MODEL_KEY, modelId.trim(), vscode.ConfigurationTarget.Global);
     }
 
     async isConfigured(): Promise<boolean> {
