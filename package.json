@@ -6,7 +6,7 @@
 	"repository": "https://github.com/semutdev/semutssh-copilot",
 	"version": "1.0.0",
 	"engines": {
-		"vscode": "^1.99.0"
+		"vscode": ">=1.85.0"
 	},
 	"categories": [
 		"AI",

@@ -9,7 +9,6 @@ on:
     branches:
       - main
       - dev
-      - geth-dev
       - dev/**
       - fix/**
       - bugfix/**
@@ -18,7 +17,6 @@ on:
   pull_request:
     branches:
       - main
-      - geth-dev
       - dev
   workflow_call:
     outputs:
@@ -29,42 +27,28 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository }}-build-container:latest
-
     outputs:
       version: ${{ steps.package_info.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install Dependencies
-        run: npm install --include dev
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run compile
 
       - name: Lint
         run: npm run lint:check
 
       - name: Check Formatting
         run: npm run format:check
-
-      - name: Run Tests with Coverage
-        run: npm run test:coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: ${{ github.workspace }}/coverage/lcov.info
-          fail_ci_if_error: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Upload test results to Codecov
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          files: ${{ github.workspace }}/test-results/test-results.xml
-          report_type: test_results
-          fail_ci_if_error: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
-          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Get Package Info
         id: package_info
@@ -73,29 +57,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Package Extension
-        run: npm run package:marketplace
+        run: npm run package
 
       - name: Upload VSIX
         uses: actions/upload-artifact@v7
         with:
-          name: vsix
-          path: litellm-connector-copilot-${{ steps.package_info.outputs.version }}.vsix
-          retention-days: 7
-
-      - name: Upload Coverage Results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 7
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results
-          path: |
-            ${{ github.workspace }}/test-results/test-results.xml
-            .vscode-test/user-data/logs
+          name: vsix-${{ github.run_number }}
+          path: semutssh-copilot-*.vsix
           retention-days: 7

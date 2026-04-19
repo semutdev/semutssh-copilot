@@ -18,7 +18,7 @@ Integrates **SemutSSH AI API** into VS Code Copilot Chat via LiteLLM-compatible 
 
 ## Requirements
 
-- **VS Code 1.99.0+**
+- **VS Code 1.85.0+**
 - **GitHub Copilot** subscription (Free or Paid Individual plans work)
 - **SemutSSH API key** — Get yours at https://semutssh.com
 
@@ -130,7 +130,7 @@ Manually edit settings via `F1` → `Preferences: Open User Settings (JSON)`:
 
 ### "Provider registered successfully" not in logs?
 
-- Make sure you're using **VS Code 1.99.0+**
+- Make sure you're using **VS Code 1.85.0+**
 - Check `Help → About` to verify your version
 - Update VS Code if needed: https://code.visualstudio.com/download
 

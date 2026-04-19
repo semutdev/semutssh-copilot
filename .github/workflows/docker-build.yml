@@ -12,7 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-build-container
+  IMAGE_NAME: semutssh-copilot-build-container
 
 jobs:
   build-and-push:
